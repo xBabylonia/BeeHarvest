@@ -15,7 +15,7 @@ An automated bot for the **BeeHarvest** application, performing various tasks li
 
 ## Configuration
 
-The bot’s settings can be customized through configuration options:
+The bot’s settings can be customized through configuration options: [line 12 to 16]
 - **enable_spin**: Enables or disables the auto-spin feature.
 - **enable_stake**: Enables or disables the staking feature.
 - **enable_mining_upgrade**: Enables or disables automatic mining upgrades.
