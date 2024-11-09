@@ -9,6 +9,8 @@ An automated bot for the **BeeHarvest** application, performing various tasks li
 ## Features
 
 - **Auto Spin**: Activates daily spin.
+- **Auto Task**: Not all.
+- **Auto Join Squad**: Join my squad
 - **Auto Stake**: Manages staking for optimal gains.
 - **Mining Upgrade**: Automatically upgrades mining capacity.
 - **Detailed Logging**: Logs bot activities with timestamps and status levels.
