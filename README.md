@@ -51,7 +51,7 @@ cd BeeHarvest
 Jalankan perintah berikut untuk menginstal semua dependensi yang dibutuhkan.
 
 ```bash
-pip install aiohttp colorama urllib.parse
+pip install aiohttp colorama loguru
 ```
 
 ## Cara Menjalankan di Windows
@@ -97,7 +97,7 @@ pip install aiohttp colorama urllib.parse
 4. Install dependensi:
 
    ```bash
-   pip install aiohttp colorama urllib.parse
+   pip install aiohttp colorama loguru
    ```
 
 5. Jalankan script:
