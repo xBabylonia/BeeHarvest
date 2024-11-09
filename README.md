@@ -10,7 +10,7 @@ An automated bot for the **BeeHarvest** application, performing various tasks li
 
 - **Daily Login**
 - **Auto Spin**
-- **Auto Task**
+- **Auto Task**: Not all
 - **Auto Join Squad**
 - **Auto Stake**
 - **Mining Upgrade**
