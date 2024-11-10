@@ -1,4 +1,5 @@
 import asyncio
+import random
 import json
 from datetime import datetime
 import aiohttp
@@ -13,6 +14,7 @@ CONFIG = {
     "enable_spin": True,
     "enable_stake": False,
     "enable_mining_upgrade": True,
+    "enable_combo": True
 }
 
 # Configure logger
@@ -91,6 +93,55 @@ class BeeHarvestBot:
         except Exception as e:
             print(f"{Fore.RED}[{datetime.now().strftime('%H:%M:%S')}] Error during token request: {str(e)}{Style.RESET_ALL}")
             return None
+            
+    async def get_combo_items(self, session, auth_headers):
+        """Get available combo items"""
+        try:
+            async with session.get("/combo_game/current", headers=auth_headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    items = data.get("data", {}).get("items", [])
+                    return [item["id"] for item in items]
+                return []
+        except Exception as e:
+            logger.error(f"Error getting combo items: {str(e)}")
+            return []
+
+    async def play_combo_game(self, session, auth_headers):
+            """Play the combo game"""
+            if not CONFIG["enable_combo"]:
+                logger.info(f"{Fore.YELLOW}Combo game is disabled in config{Style.RESET_ALL}")
+                return
+
+            try:
+                item_ids = await self.get_combo_items(session, auth_headers)
+                if not item_ids:
+                    logger.error("No combo items found")
+                    return
+
+                selected_items = random.sample(item_ids, 4)
+                payload = {"itemIds": selected_items}
+                headers = {**auth_headers, "Content-Type": "application/json"}
+
+                async with session.post("/combo_game/check_combo", headers=headers, json=payload) as response:
+                    result = await response.json()
+                    
+                    if response.status == 200:
+                        msg = result.get("message", "Unknown response")
+                        reward = result.get("data", {})
+                        if reward:
+                            logger.info(f"{Fore.GREEN}Combo Game: {msg} - Reward: {reward}{Style.RESET_ALL}")
+                        else:
+                            logger.info(f"{Fore.GREEN}Combo Game: {msg}{Style.RESET_ALL}")
+                    else:
+                        msg = result.get("message", "Unknown error")
+                        if "already played" in msg.lower():
+                            logger.info(f"{Fore.YELLOW}Combo Game: {msg}{Style.RESET_ALL}")
+                        else:
+                            logger.error(f"{Fore.RED}Combo Game Error: {msg}{Style.RESET_ALL}")
+
+            except Exception as e:
+                logger.error(f"Error in combo game: {str(e)}")
 
     # Task Processing Methods
     async def process_task(self, task, auth_headers):
@@ -236,7 +287,6 @@ class BeeHarvestBot:
             logger.error(f"Error checking squad status: {str(e)}")
             return False
 
-    # Account Processing Methods
     async def process_account(self, user_data):
         """Process a single account"""
         async with aiohttp.ClientSession(base_url=self.base_url) as session:
@@ -262,7 +312,6 @@ class BeeHarvestBot:
                         balance = user_info.get("data", {}).get("balance")
                         logger.info(f"{Fore.CYAN}Account: {username} | Balance: {balance}{Style.RESET_ALL}")
 
-
                 # Login Daily
                 async with session.post("/user/streak/claim", headers=auth_headers) as response:
                     msg = (await response.json()).get("message", "Unknown response")
@@ -271,11 +320,23 @@ class BeeHarvestBot:
                 # Process Spins
                 await self.process_spins(session, auth_headers)
 
+                # Play Combo Game
+                await self.play_combo_game(session, auth_headers)
+
                 # Upgrade Mining if enabled
                 if CONFIG["enable_mining_upgrade"]:
                     async with session.post("/user/boost/honey/next_level", headers=auth_headers) as response:
-                        msg = (await response.json()).get("message", "Unknown response")
-                        logger.info(f"{Fore.GREEN}Mining Upgrade: {msg}{Style.RESET_ALL}")
+                        result = await response.json()
+                        data = result.get("data", {})
+                        current = result.get("current", {})
+                        
+                        if data and current:
+                            old_level = data.get("level", 0)
+                            new_level = current.get("level", 0)
+                            logger.info(f"{Fore.GREEN}Mining Upgrade: Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
+                        else:
+                            msg = result.get("message", "Unknown response")
+                            logger.info(f"{Fore.YELLOW}Mining Upgrade: {msg}{Style.RESET_ALL}")
 
                 # Join Squad
                 async with session.post("/user/join_squad/2637", headers=auth_headers) as response:
