@@ -5,6 +5,7 @@ from datetime import datetime
 import aiohttp
 from colorama import Fore, Style, init
 from loguru import logger
+import hashlib
 
 # Initialize colorama
 init(autoreset=True)
@@ -33,10 +34,66 @@ logger.add(
     level="INFO"
 )
 
+class EndpointMonitor:
+    def __init__(self):
+        self.endpoint_signatures = {}
+        
+    async def check_endpoint(self, session, url, method, headers=None, payload=None):
+        """Check if endpoint response structure has changed"""
+        try:
+            if method.upper() == "GET":
+                async with session.get(url, headers=headers) as response:
+                    content = await response.text()
+            else:  # POST
+                async with session.post(url, headers=headers, json=payload) as response:
+                    content = await response.text()
+                    
+            # Generate signature from status code and response structure
+            current_signature = self._generate_signature(response.status, content)
+            
+            # If this is first time checking endpoint
+            if url not in self.endpoint_signatures:
+                self.endpoint_signatures[url] = current_signature
+                return True
+                
+            # Check if signature matches
+            if self.endpoint_signatures[url] != current_signature:
+                logger.error(f"{Fore.RED}⚠️ API Endpoint changed: {url}{Style.RESET_ALL}")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking endpoint {url}: {str(e)}")
+            return False
+            
+    def _generate_signature(self, status_code, content):
+        """Generate a signature from response status and structure"""
+        try:
+            # For JSON responses, we'll hash the structure (keys)
+            data = json.loads(content)
+            structure = self._get_json_structure(data)
+            signature = f"{status_code}:{structure}"
+        except json.JSONDecodeError:
+            # For non-JSON responses, hash the content length
+            signature = f"{status_code}:{len(content)}"
+            
+        return hashlib.md5(signature.encode()).hexdigest()
+        
+    def _get_json_structure(self, obj):
+        """Recursively get JSON structure (keys only)"""
+        if isinstance(obj, dict):
+            return '{' + ','.join(sorted(f'{k}:{self._get_json_structure(v)}' for k, v in obj.items())) + '}'
+        elif isinstance(obj, list) and obj:
+            return '[' + self._get_json_structure(obj[0]) + ']'
+        else:
+            return 'value'
+
 class BeeHarvestBot:
     def __init__(self):
         self.base_url = "https://api.beeharvest.life"
         self.session = None
+        self.endpoint_monitor = EndpointMonitor()
         self.default_headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
@@ -66,30 +123,44 @@ class BeeHarvestBot:
         print(banner)
         logger.info("Starting BeeHarvest Bot...")
 
-    # Authentication Methods
+    async def safe_request(self, method, endpoint, headers=None, payload=None):
+        """Make a safe request with endpoint monitoring"""
+        url = f"{self.base_url}{endpoint}"
+        
+        # Check if endpoint is still valid
+        if not await self.endpoint_monitor.check_endpoint(self.session, url, method, headers, payload):
+            logger.error(f"{Fore.RED}Stopping bot due to API endpoint change{Style.RESET_ALL}")
+            raise SystemExit("API endpoint structure changed")
+            
+        # Make the actual request
+        try:
+            if method.upper() == "GET":
+                async with self.session.get(url, headers=headers) as response:
+                    return await response.json()
+            else:  # POST
+                async with self.session.post(url, headers=headers, json=payload) as response:
+                    return await response.json()
+        except Exception as e:
+            logger.error(f"Request error: {str(e)}")
+            return None
+
     async def get_token(self, user_data):
         """Get authentication token"""
         try:
             headers = {**self.default_headers, "Content-Type": "application/json"}
-            async with self.session.post("/auth/validate", headers=headers, json={"hash": user_data}, timeout=30) as response:
-                response_text = await response.text()
-                
-                if response.status == 200:
-                    try:
-                        data = json.loads(response_text)
-                        token = data.get("data", {}).get("token")
-                        if token:
-                            print(f"{Fore.GREEN}[{datetime.now().strftime('%H:%M:%S')}] Token received successfully{Style.RESET_ALL}")
-                            return token
-                        else:
-                            token = data.get("data", {}).get("user", {}).get("token")
-                            if token:
-                                print(f"{Fore.GREEN}[{datetime.now().strftime('%H:%M:%S')}] Token received successfully from alternate path{Style.RESET_ALL}")
-                                return token
-                            print(f"{Fore.RED}[{datetime.now().strftime('%H:%M:%S')}] Token not found in response structure{Style.RESET_ALL}")
-                    except json.JSONDecodeError:
-                        print(f"{Fore.RED}[{datetime.now().strftime('%H:%M:%S')}] Failed to parse JSON response{Style.RESET_ALL}")
-                return None
+            response = await self.safe_request("POST", "/auth/validate", headers=headers, payload={"hash": user_data})
+            
+            if response:
+                token = response.get("data", {}).get("token")
+                if token:
+                    print(f"{Fore.GREEN}[{datetime.now().strftime('%H:%M:%S')}] Token received successfully{Style.RESET_ALL}")
+                    return token
+                else:
+                    token = response.get("data", {}).get("user", {}).get("token")
+                    if token:
+                        print(f"{Fore.GREEN}[{datetime.now().strftime('%H:%M:%S')}] Token received successfully from alternate path{Style.RESET_ALL}")
+                        return token
+            return None
         except Exception as e:
             print(f"{Fore.RED}[{datetime.now().strftime('%H:%M:%S')}] Error during token request: {str(e)}{Style.RESET_ALL}")
             return None
@@ -407,26 +478,31 @@ class BeeHarvestBot:
         while True:
             try:
                 logger.info(f"Starting Cycle #{cycle_count}")
+                
+                async with aiohttp.ClientSession() as self.session:
+                    try:
+                        with open("data.txt", "r") as file:
+                            accounts = [line.strip() for line in file if line.strip()]
+                        
+                        if not accounts:
+                            logger.error("data.txt is empty")
+                            return
 
-                try:
-                    with open("data.txt", "r") as file:
-                        accounts = [line.strip() for line in file if line.strip()]
-                    
-                    if not accounts:
-                        logger.error("data.txt is empty")
+                        logger.info(f"Found {len(accounts)} accounts")
+
+                        for i, account_data in enumerate(accounts, 1):
+                            logger.info(f"Processing account {i}/{len(accounts)}")
+                            try:
+                                await self.process_account(account_data)
+                            except SystemExit as e:
+                                logger.error(f"{Fore.RED}Bot stopped: {str(e)}{Style.RESET_ALL}")
+                                return
+                            if i < len(accounts):
+                                await asyncio.sleep(3)
+
+                    except FileNotFoundError:
+                        logger.error("data.txt not found")
                         return
-
-                    logger.info(f"Found {len(accounts)} accounts")
-
-                    for i, account_data in enumerate(accounts, 1):
-                        logger.info(f"Processing account {i}/{len(accounts)}")
-                        await self.process_account(account_data)
-                        if i < len(accounts):
-                            await asyncio.sleep(3)
-
-                except FileNotFoundError:
-                    logger.error("data.txt not found")
-                    return
 
                 logger.info(f"Cycle #{cycle_count} completed. Waiting 10 minutes...")
                 
