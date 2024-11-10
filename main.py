@@ -7,19 +7,17 @@ from colorama import Fore, Style, init
 from loguru import logger
 import hashlib
 
-# Initialize colorama
 init(autoreset=True)
 
-# Bot Configuration
+#CHANGE TRUE/FALSE
 CONFIG = {
     "enable_spin": True,
     "enable_stake": False,
-    "enable_mining_upgrade": True,
+    "enable_mining_upgrade": False,
     "enable_combo": True
 }
 
-# Configure logger
-logger.remove()  # Remove default handler
+logger.remove()
 logger.add(
     "beeharvest.log",
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
@@ -39,24 +37,20 @@ class EndpointMonitor:
         self.endpoint_signatures = {}
         
     async def check_endpoint(self, session, url, method, headers=None, payload=None):
-        """Check if endpoint response structure has changed"""
         try:
             if method.upper() == "GET":
                 async with session.get(url, headers=headers) as response:
                     content = await response.text()
-            else:  # POST
+            else:
                 async with session.post(url, headers=headers, json=payload) as response:
                     content = await response.text()
-                    
-            # Generate signature from status code and response structure
+
             current_signature = self._generate_signature(response.status, content)
             
-            # If this is first time checking endpoint
             if url not in self.endpoint_signatures:
                 self.endpoint_signatures[url] = current_signature
                 return True
                 
-            # Check if signature matches
             if self.endpoint_signatures[url] != current_signature:
                 logger.error(f"{Fore.RED}⚠️ API Endpoint changed: {url}{Style.RESET_ALL}")
                 return False
@@ -68,20 +62,16 @@ class EndpointMonitor:
             return False
             
     def _generate_signature(self, status_code, content):
-        """Generate a signature from response status and structure"""
         try:
-            # For JSON responses, we'll hash the structure (keys)
             data = json.loads(content)
             structure = self._get_json_structure(data)
             signature = f"{status_code}:{structure}"
         except json.JSONDecodeError:
-            # For non-JSON responses, hash the content length
             signature = f"{status_code}:{len(content)}"
             
         return hashlib.md5(signature.encode()).hexdigest()
         
     def _get_json_structure(self, obj):
-        """Recursively get JSON structure (keys only)"""
         if isinstance(obj, dict):
             return '{' + ','.join(sorted(f'{k}:{self._get_json_structure(v)}' for k, v in obj.items())) + '}'
         elif isinstance(obj, list) and obj:
@@ -110,12 +100,11 @@ class BeeHarvestBot:
         }
 
     def print_banner(self):
-        """Print the bot banner"""
         banner = f"""{Fore.CYAN}
     ┏━━━━┳┓╋╋╋╋╋┏━━━┓╋╋╋┏┓╋╋╋╋╋┏━━━┓╋╋┏┓╋╋╋╋╋┏━┓    Auto BeeHarvest Bot
     ┃┏┓┏┓┃┃╋╋╋╋╋┃┏━┓┃╋╋╋┃┃╋╋╋╋╋┃┏━┓┃╋╋┃┃╋╋╋╋╋┃┏┛    Modified by @yogschannel
-    ┗┛┃┃┗┫┗━┳━━┓┃┃╋┃┣━┳━┛┣━━┳━┓┃┃╋┃┣━━┫┗━┳━━┳┛┗┓
-    ╋╋┃┃╋┃┏┓┃┃━┫┃┃╋┃┃┏┫┏┓┃┃━┫┏┛┃┗━┛┃━━┫┏┓┃┏┓┣┓┏┛
+    ┗┛┃┃┗┫┗━┳━━┓┃┃ ┃┣━┳━┛┣━━┳━┓┃┃ ┃┣━━┫┗━┳━━┳┛┗┓
+    ╋╋┃┃╋┃┏┓┃┃━┫┃┃ ┃┃┏┫┏┓┃┃━┫┏┛┃┗━┛┃━━┫┏┓┃┏┓┣┓┏┛
     ╋╋┃┃╋┃┃┃┃┃━┫┃┗━┛┃┃┃┗┛┃┃━┫┃╋┃┏━┓┣━━┃┃┃┃┏┓┃┃┃
     ╋╋┗┛╋┗┛┗┻━━┛┗━━━┻┛┗━━┻━━┻┛╋┗┛╋┗┻━━┻┛┗┻┛┗┛┗┛
     {Style.RESET_ALL}
@@ -124,20 +113,17 @@ class BeeHarvestBot:
         logger.info("Starting BeeHarvest Bot...")
 
     async def safe_request(self, method, endpoint, headers=None, payload=None):
-        """Make a safe request with endpoint monitoring"""
         url = f"{self.base_url}{endpoint}"
-        
-        # Check if endpoint is still valid
+
         if not await self.endpoint_monitor.check_endpoint(self.session, url, method, headers, payload):
             logger.error(f"{Fore.RED}Stopping bot due to API endpoint change{Style.RESET_ALL}")
             raise SystemExit("API endpoint structure changed")
             
-        # Make the actual request
         try:
             if method.upper() == "GET":
                 async with self.session.get(url, headers=headers) as response:
                     return await response.json()
-            else:  # POST
+            else:
                 async with self.session.post(url, headers=headers, json=payload) as response:
                     return await response.json()
         except Exception as e:
@@ -145,7 +131,6 @@ class BeeHarvestBot:
             return None
 
     async def get_token(self, user_data):
-        """Get authentication token"""
         try:
             headers = {**self.default_headers, "Content-Type": "application/json"}
             response = await self.safe_request("POST", "/auth/validate", headers=headers, payload={"hash": user_data})
@@ -166,7 +151,6 @@ class BeeHarvestBot:
             return None
             
     async def get_combo_items(self, session, auth_headers):
-        """Get available combo items"""
         try:
             async with session.get("/combo_game/current", headers=auth_headers) as response:
                 if response.status == 200:
@@ -179,7 +163,6 @@ class BeeHarvestBot:
             return []
 
     async def play_combo_game(self, session, auth_headers):
-            """Play the combo game"""
             if not CONFIG["enable_combo"]:
                 logger.info(f"{Fore.YELLOW}Combo game is disabled in config{Style.RESET_ALL}")
                 return
@@ -214,9 +197,7 @@ class BeeHarvestBot:
             except Exception as e:
                 logger.error(f"Error in combo game: {str(e)}")
 
-    # Task Processing Methods
     async def process_task(self, task, auth_headers):
-        """Process a single task"""
         try:
             task_id = task.get("id")
             title = task.get("title", "Unknown Task")
@@ -245,7 +226,6 @@ class BeeHarvestBot:
             print(f"{Fore.RED}[Task] ✗ Error processing {title}: {str(e)}{Style.RESET_ALL}")
 
     async def verify_task(self, task_id, auth_headers):
-        """Verify task completion"""
         try:
             async with self.session.post(f"/tasks/check_tg_task/{task_id}", headers=auth_headers) as task_response:
                 if task_response.status == 200:
@@ -260,7 +240,6 @@ class BeeHarvestBot:
             print(f"{Fore.RED}[Task] ✗ Verification error: {str(e)}{Style.RESET_ALL}")
 
     async def process_tasks(self, session, auth_headers):
-        """Process all available tasks"""
         async with session.get("/tasks/user", headers=auth_headers) as response:
             if response.status == 200:
                 tasks = (await response.json()).get('data', [])
@@ -273,9 +252,7 @@ class BeeHarvestBot:
                                 if task_response.status == 200:
                                     logger.success(f"Task {task_id} completed")
 
-    # Spin Processing Methods
     async def get_spin_info(self, session, auth_headers):
-        """Get spin information"""
         try:
             async with session.get("/spinner/spin", headers=auth_headers) as response:
                 if response.status == 200:
@@ -287,7 +264,6 @@ class BeeHarvestBot:
             return None
 
     async def perform_spin(self, session, auth_headers, spin_count):
-        """Perform spin with specified count"""
         try:
             payload = {"spin_count": spin_count}
             headers = {**auth_headers, "Content-Type": "application/json"}
@@ -308,7 +284,6 @@ class BeeHarvestBot:
             return False
 
     async def process_spins(self, session, auth_headers):
-        """Process all available spins"""
         if not CONFIG["enable_spin"]:
             logger.info(f"{Fore.YELLOW}Spin feature is disabled in config{Style.RESET_ALL}")
             return
@@ -344,9 +319,7 @@ class BeeHarvestBot:
                 break
             await asyncio.sleep(1)
 
-    # Squad Methods
     async def check_squad_status(self, session, auth_headers):
-        """Check if user is in a squad"""
         try:
             async with session.get("/user/profile", headers=auth_headers) as response:
                 if response.status == 200:
@@ -358,11 +331,54 @@ class BeeHarvestBot:
             logger.error(f"Error checking squad status: {str(e)}")
             return False
 
+    async def upgrade_mining_component(self, session, auth_headers, component_type):
+            try:
+                while True:
+                    async with session.post(f"/user/boost/{component_type}/next_level", headers=auth_headers) as response:
+                        result = await response.json()
+                        
+                        if response.status != 200:
+                            msg = result.get("message", "Unknown error")
+                            if "insufficient" in msg.lower():
+                                logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): Insufficient funds{Style.RESET_ALL}")
+                                return False
+                            else:
+                                logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
+                                return False
+                        
+                        data = result.get("data", {})
+                        current = result.get("current", {})
+                        
+                        if data and current:
+                            old_level = data.get("level", 0)
+                            new_level = current.get("level", 0)
+                            logger.success(f"{Fore.GREEN}Mining Upgrade ({component_type}): Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
+                        else:
+                            msg = result.get("message", "Unknown response")
+                            logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
+                            return False
+                    
+                    await asyncio.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"{Fore.RED}Error upgrading {component_type}: {str(e)}{Style.RESET_ALL}")
+                return False
+
+    async def process_mining_upgrades(self, session, auth_headers):
+        if not CONFIG["enable_mining_upgrade"]:
+            logger.info(f"{Fore.YELLOW}Mining upgrades disabled in config{Style.RESET_ALL}")
+            return
+            
+        upgrade_sequence = ["farmer", "beehive", "bee", "honey"]
+        
+        for component in upgrade_sequence:
+            logger.info(f"{Fore.CYAN}Attempting to upgrade {component}{Style.RESET_ALL}")
+            await self.upgrade_mining_component(session, auth_headers, component)
+            await asyncio.sleep(1)
+
     async def process_account(self, user_data):
-        """Process a single account"""
         async with aiohttp.ClientSession(base_url=self.base_url) as session:
             try:
-                # Get token
                 headers = {**self.default_headers, "Content-Type": "application/json"}
                 async with session.post("/auth/validate", headers=headers, json={"hash": user_data}) as response:
                     if response.status != 200:
@@ -375,7 +391,6 @@ class BeeHarvestBot:
 
                 auth_headers = {**self.default_headers, "Authorization": f"Bearer {token}"}
 
-                # Get User Info
                 async with session.get("/user/profile", headers=auth_headers) as response:
                     if response.status == 200:
                         user_info = await response.json()
@@ -383,44 +398,24 @@ class BeeHarvestBot:
                         balance = user_info.get("data", {}).get("balance")
                         logger.info(f"{Fore.CYAN}Account: {username} | Balance: {balance}{Style.RESET_ALL}")
 
-                # Login Daily
                 async with session.post("/user/streak/claim", headers=auth_headers) as response:
                     msg = (await response.json()).get("message", "Unknown response")
                     logger.info(f"{Fore.GREEN}Daily Login: {msg}{Style.RESET_ALL}")
 
-                # Process Spins
                 await self.process_spins(session, auth_headers)
-
-                # Play Combo Game
                 await self.play_combo_game(session, auth_headers)
 
-                # Upgrade Mining if enabled
                 if CONFIG["enable_mining_upgrade"]:
-                    async with session.post("/user/boost/honey/next_level", headers=auth_headers) as response:
-                        result = await response.json()
-                        data = result.get("data", {})
-                        current = result.get("current", {})
-                        
-                        if data and current:
-                            old_level = data.get("level", 0)
-                            new_level = current.get("level", 0)
-                            logger.info(f"{Fore.GREEN}Mining Upgrade: Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
-                        else:
-                            msg = result.get("message", "Unknown response")
-                            logger.info(f"{Fore.YELLOW}Mining Upgrade: {msg}{Style.RESET_ALL}")
+                    await self.process_mining_upgrades(session, auth_headers)
 
-                # Join Squad
                 async with session.post("/user/join_squad/2637", headers=auth_headers) as response:
                     msg = (await response.json()).get("message", "Unknown response")
                     logger.info(f"{Fore.GREEN}Join Squad: {msg}{Style.RESET_ALL}")
 
-                # Process Tasks
                 await self.process_tasks(session, auth_headers)
 
-                # Check squad status before staking
                 is_in_squad = await self.check_squad_status(session, auth_headers)
 
-                # Get Final Balance and Stake if enabled
                 if CONFIG["enable_stake"]:
                     async with session.get("/user/profile", headers=auth_headers) as response:
                         if response.status == 200:
@@ -442,9 +437,7 @@ class BeeHarvestBot:
                 logger.error(f"{Fore.RED}Account Error: {str(e)}{Style.RESET_ALL}")
 
     async def process_all_accounts(self):
-        """Process all accounts from data.txt"""
         try:
-            # Check if data.txt exists
             try:
                 with open("data.txt", "r") as file:
                     accounts = file.readlines()
@@ -471,7 +464,6 @@ class BeeHarvestBot:
             print(f"{Fore.RED}[{datetime.now().strftime('%H:%M:%S')}] Error in process_all_accounts: {str(e)}{Style.RESET_ALL}")
 
     async def run(self):
-        """Main run method"""
         self.print_banner()
         cycle_count = 1
         
@@ -519,7 +511,6 @@ class BeeHarvestBot:
                 logger.warning("Waiting 60 seconds before retry...")
                 await asyncio.sleep(60)
 
-# Main entry point
 if __name__ == "__main__":
     try:
         bot = BeeHarvestBot()
