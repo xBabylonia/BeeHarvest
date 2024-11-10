@@ -9,6 +9,7 @@ An automated bot for the **BeeHarvest** application, performing various tasks li
 ## Features
 
 - **Daily Login**
+- **Random Combo**
 - **Auto Spin**
 - **Auto Task**: Not all
 - **Auto Join Squad**
