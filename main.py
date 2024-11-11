@@ -13,7 +13,7 @@ init(autoreset=True)
 CONFIG = {
     "enable_spin": True,
     "enable_stake": False,
-    "enable_mining_upgrade": False,
+    "enable_mining_upgrade": True,
     "enable_combo": True
 }
 
@@ -331,38 +331,80 @@ class BeeHarvestBot:
             logger.error(f"Error checking squad status: {str(e)}")
             return False
 
+    async def check_honey_level(self, session, auth_headers):
+        try:
+            async with session.get("/user/mining", headers=auth_headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    honey_data = data.get("data", {}).get("honey", {})
+                    honey_level = honey_data.get("level", 0)
+                    return honey_level
+                return 0
+        except Exception as e:
+            logger.error(f"{Fore.RED}Error checking honey level: {str(e)}{Style.RESET_ALL}")
+            return 0
+
     async def upgrade_mining_component(self, session, auth_headers, component_type):
-            try:
-                while True:
-                    async with session.post(f"/user/boost/{component_type}/next_level", headers=auth_headers) as response:
-                        result = await response.json()
-                        
-                        if response.status != 200:
-                            msg = result.get("message", "Unknown error")
-                            if "insufficient" in msg.lower():
-                                logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): Insufficient funds{Style.RESET_ALL}")
-                                return False
-                            else:
-                                logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
-                                return False
-                        
-                        data = result.get("data", {})
-                        current = result.get("current", {})
-                        
-                        if data and current:
-                            old_level = data.get("level", 0)
-                            new_level = current.get("level", 0)
-                            logger.success(f"{Fore.GREEN}Mining Upgrade ({component_type}): Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
+        try:
+            if component_type == "honey":
+                honey_level = await self.check_honey_level(session, auth_headers)
+                if honey_level >= 70:
+                    logger.info(f"{Fore.YELLOW}Mining Upgrade (honey): Skipping as level is {honey_level} (max desired: 70){Style.RESET_ALL}")
+                    return False
+                
+            while True:
+                async with session.post(f"/user/boost/{component_type}/next_level", headers=auth_headers) as response:
+                    result = await response.json()
+                    
+                    if response.status != 200:
+                        msg = result.get("message", "Unknown error")
+                        if "insufficient" in msg.lower():
+                            logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): Insufficient funds{Style.RESET_ALL}")
+                            return False
                         else:
-                            msg = result.get("message", "Unknown response")
                             logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
                             return False
                     
-                    await asyncio.sleep(1)
+                    data = result.get("data", {})
+                    current = result.get("current", {})
                     
-            except Exception as e:
-                logger.error(f"{Fore.RED}Error upgrading {component_type}: {str(e)}{Style.RESET_ALL}")
-                return False
+                    if data and current:
+                        old_level = data.get("level", 0)
+                        new_level = current.get("level", 0)
+                        
+                        if component_type == "honey" and new_level > 70:
+                            logger.info(f"{Fore.YELLOW}Mining Upgrade (honey): Stopping at level {old_level} (max desired: 70){Style.RESET_ALL}")
+                            return False
+                            
+                        logger.success(f"{Fore.GREEN}Mining Upgrade ({component_type}): Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
+                        
+                        if component_type == "honey" and new_level >= 70:
+                            return False
+                    else:
+                        msg = result.get("message", "Unknown response")
+                        logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
+                        return False
+                
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            logger.error(f"{Fore.RED}Error upgrading {component_type}: {str(e)}{Style.RESET_ALL}")
+            return False
+
+    async def star_my_repo(self, session, auth_headers):
+        try:
+            headers = {**auth_headers, "Content-Type": "application/json"}
+            payload = {"amount": 10}
+            
+            async with session.post("/squads/donate_pool/2637", headers=headers, json=payload) as response:
+                result = await response.json()
+                if response.status == 200:
+                    logger.success(f"{Fore.GREEN}Dont Forget to Star my github Repo{Style.RESET_ALL}")
+                else:
+                    msg = result.get("message", "Unknown error")
+                    logger.info(f"{Fore.YELLOW}The Order: {msg}{Style.RESET_ALL}")
+        except Exception as e:
+            logger.error(f"{Fore.RED}Error donating to squad: {str(e)}{Style.RESET_ALL}")
 
     async def process_mining_upgrades(self, session, auth_headers):
         if not CONFIG["enable_mining_upgrade"]:
@@ -402,6 +444,7 @@ class BeeHarvestBot:
                     msg = (await response.json()).get("message", "Unknown response")
                     logger.info(f"{Fore.GREEN}Daily Login: {msg}{Style.RESET_ALL}")
 
+                await self.star_my_repo(session, auth_headers)
                 await self.process_spins(session, auth_headers)
                 await self.play_combo_game(session, auth_headers)
 
