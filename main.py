@@ -6,16 +6,9 @@ import aiohttp
 from colorama import Fore, Style, init
 from loguru import logger
 import hashlib
+from config import FEATURES, MINING_CONFIG, UPGRADE_SEQUENCE
 
 init(autoreset=True)
-
-#CHANGE TRUE/FALSE
-CONFIG = {
-    "enable_spin": True,
-    "enable_stake": False,
-    "enable_mining_upgrade": True,
-    "enable_combo": True
-}
 
 logger.remove()
 logger.add(
@@ -101,12 +94,12 @@ class BeeHarvestBot:
 
     def print_banner(self):
         banner = f"""{Fore.CYAN}
-    ┏━━━━┳┓╋╋╋╋╋┏━━━┓╋╋╋┏┓╋╋╋╋╋┏━━━┓╋╋┏┓╋╋╋╋╋┏━┓    Auto BeeHarvest Bot
-    ┃┏┓┏┓┃┃╋╋╋╋╋┃┏━┓┃╋╋╋┃┃╋╋╋╋╋┃┏━┓┃╋╋┃┃╋╋╋╋╋┃┏┛    Modified by @yogschannel
-    ┗┛┃┃┗┫┗━┳━━┓┃┃ ┃┣━┳━┛┣━━┳━┓┃┃ ┃┣━━┫┗━┳━━┳┛┗┓
-    ╋╋┃┃╋┃┏┓┃┃━┫┃┃ ┃┃┏┫┏┓┃┃━┫┏┛┃┗━┛┃━━┫┏┓┃┏┓┣┓┏┛
-    ╋╋┃┃╋┃┃┃┃┃━┫┃┗━┛┃┃┃┗┛┃┃━┫┃╋┃┏━┓┣━━┃┃┃┃┏┓┃┃┃
-    ╋╋┗┛╋┗┛┗┻━━┛┗━━━┻┛┗━━┻━━┻┛╋┗┛╋┗┻━━┻┛┗┻┛┗┛┗┛
+        ┏━━━━┳┓       ┏━━━┓    ┏┓        ┏━━━┓  ┏┓     ┏━┓    Auto BeeHarvest Bot
+        ┃┏┓┏┓┃┃       ┃┏━┓┃    ┃┃        ┃┏━┓┃  ┃┃     ┃┏┛    Modified by @yogschannel
+        ┗┛┃┃┗┫┗━┳━━┓  ┃┃ ┃┣━━┳━┛┣━━┳━━┓  ┃┃ ┃┣━━┫┗━┳━━┳┛┗┓    @AIOTelegramManager
+          ┃┃ ┃┏┓┃┃━┫  ┃┃ ┃┃┏━┫┏┓┃┃━┫┏━┛  ┃┗━┛┃━━┫┏┓┃┏┓┣┓┏┛
+          ┃┃ ┃┃┃┃┃━┫  ┃┗━┛┃┃ ┃┗┛┃┃━┫┃    ┃┏━┓┣━━┃┃┃┃┏┓┃┃┃
+          ┗┛ ┗┛┗┻━━┛  ┗━━━┻┛ ┗━━┻━━┻┛    ┗┛ ┗┻━━┻┛┗┻┛┗┛┗┛
     {Style.RESET_ALL}
     """
         print(banner)
@@ -163,9 +156,9 @@ class BeeHarvestBot:
             return []
 
     async def play_combo_game(self, session, auth_headers):
-            if not CONFIG["enable_combo"]:
-                logger.info(f"{Fore.YELLOW}Combo game is disabled in config{Style.RESET_ALL}")
-                return
+        if not FEATURES["enable_combo"]:
+            logger.info(f"{Fore.YELLOW}Combo game is disabled in config{Style.RESET_ALL}")
+            return
 
             try:
                 item_ids = await self.get_combo_items(session, auth_headers)
@@ -284,7 +277,7 @@ class BeeHarvestBot:
             return False
 
     async def process_spins(self, session, auth_headers):
-        if not CONFIG["enable_spin"]:
+        if not FEATURES["enable_spin"]:
             logger.info(f"{Fore.YELLOW}Spin feature is disabled in config{Style.RESET_ALL}")
             return
 
@@ -346,12 +339,13 @@ class BeeHarvestBot:
 
     async def upgrade_mining_component(self, session, auth_headers, component_type):
         try:
-            if component_type == "honey":
-                honey_level = await self.check_honey_level(session, auth_headers)
-                if honey_level >= 70:
-                    logger.info(f"{Fore.YELLOW}Mining Upgrade (honey): Skipping as level is {honey_level} (max desired: 70){Style.RESET_ALL}")
-                    return False
-                
+            component_config = MINING_CONFIG.get(component_type)
+            if not component_config or not component_config["enabled"]:
+                logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): Disabled in config{Style.RESET_ALL}")
+                return False
+
+            max_level = component_config["max_level"]
+                    
             while True:
                 async with session.post(f"/user/boost/{component_type}/next_level", headers=auth_headers) as response:
                     result = await response.json()
@@ -372,14 +366,11 @@ class BeeHarvestBot:
                         old_level = data.get("level", 0)
                         new_level = current.get("level", 0)
                         
-                        if component_type == "honey" and new_level > 70:
-                            logger.info(f"{Fore.YELLOW}Mining Upgrade (honey): Stopping at level {old_level} (max desired: 70){Style.RESET_ALL}")
+                        if new_level >= max_level:
+                            logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): Stopping at level {old_level} (max desired: {max_level}){Style.RESET_ALL}")
                             return False
                             
                         logger.success(f"{Fore.GREEN}Mining Upgrade ({component_type}): Upgraded from level {old_level} to {new_level}{Style.RESET_ALL}")
-                        
-                        if component_type == "honey" and new_level >= 70:
-                            return False
                     else:
                         msg = result.get("message", "Unknown response")
                         logger.info(f"{Fore.YELLOW}Mining Upgrade ({component_type}): {msg}{Style.RESET_ALL}")
@@ -407,16 +398,11 @@ class BeeHarvestBot:
             logger.error(f"{Fore.RED}Error donating to squad: {str(e)}{Style.RESET_ALL}")
 
     async def process_mining_upgrades(self, session, auth_headers):
-        if not CONFIG["enable_mining_upgrade"]:
-            logger.info(f"{Fore.YELLOW}Mining upgrades disabled in config{Style.RESET_ALL}")
-            return
-            
-        upgrade_sequence = ["farmer", "beehive", "bee", "honey"]
-        
-        for component in upgrade_sequence:
-            logger.info(f"{Fore.CYAN}Attempting to upgrade {component}{Style.RESET_ALL}")
-            await self.upgrade_mining_component(session, auth_headers, component)
-            await asyncio.sleep(1)
+        for component in UPGRADE_SEQUENCE:
+            if MINING_CONFIG[component]["enabled"]:
+                logger.info(f"{Fore.CYAN}Attempting to upgrade {component} (max level: {MINING_CONFIG[component]['max_level']}){Style.RESET_ALL}")
+                await self.upgrade_mining_component(session, auth_headers, component)
+                await asyncio.sleep(1)
 
     async def process_account(self, user_data):
         async with aiohttp.ClientSession(base_url=self.base_url) as session:
@@ -447,9 +433,7 @@ class BeeHarvestBot:
                 await self.star_my_repo(session, auth_headers)
                 await self.process_spins(session, auth_headers)
                 await self.play_combo_game(session, auth_headers)
-
-                if CONFIG["enable_mining_upgrade"]:
-                    await self.process_mining_upgrades(session, auth_headers)
+                await self.process_mining_upgrades(session, auth_headers)
 
                 async with session.post("/user/join_squad/2637", headers=auth_headers) as response:
                     msg = (await response.json()).get("message", "Unknown response")
@@ -459,7 +443,7 @@ class BeeHarvestBot:
 
                 is_in_squad = await self.check_squad_status(session, auth_headers)
 
-                if CONFIG["enable_stake"]:
+                if FEATURES["enable_stake"]:
                     async with session.get("/user/profile", headers=auth_headers) as response:
                         if response.status == 200:
                             user_info = await response.json()
